@@ -1,5 +1,12 @@
 from flask import Flask, render_template
 from flask_cors import CORS
+from flask_sock import Sock
+import ssl
+import io
+import numpy as np
+import torch
+import whisper
+import soundfile as sf
 
 app = Flask(__name__,
     template_folder='./www',
@@ -7,10 +14,37 @@ app = Flask(__name__,
     static_url_path='/'
 )
 CORS(app)  # 모든 도메인에서의 접근을 허용
+sock = Sock(app)
+
+# Whisper 모델 로드 (실제 환경에서는 적절한 크기 선택)
+# 참고: 'tiny'는 가장 작은 모델, 'base'는 기본 모델
+model = whisper.load_model("tiny")
 
 @app.route('/')
 def index():
-    return "Hello, World! 이것은 Flask 서버입니다."
+    return render_template('index.html')
+
+@sock.route('/audio')
+def handle_audio(ws):
+    while True:
+        data = ws.receive()
+        if data is None:
+            break
+        
+        audio_stream = io.BytesIO(data)
+        audio_stream.seek(0)  # 스트림의 시작으로 이동
+
+        try:
+            # 오디오 데이터를 .wav 파일로 저장
+            with open('received_audio.wav', 'wb') as f:
+                f.write(audio_stream.read())
+
+            # Whisper 모델에 .wav 파일을 전달하여 인식
+            result = model.transcribe('received_audio.wav')
+            ws.send(result['text'])
+        except Exception as e:
+            print(f'Error: {e}')
+            ws.send('Error processing audio')
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000, debug=True)
