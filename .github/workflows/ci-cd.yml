@@ -46,15 +46,12 @@ jobs:
         cd server
         python -m pytest || true
 
-
     - name: Start server and expose with ngrok
       env:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
       run: |
         pip install pyngrok
-        
-        # 백그라운드에서 서버와 ngrok 실행
-        nohup python -c "
+        python -c "
         import subprocess
         import time
         import os
@@ -69,27 +66,30 @@ jobs:
         
         # 서버 시작 대기
         print('서버가 시작될 때까지 잠시 대기합니다...')
-        time.sleep(3)
+        time.sleep(5)
         
         # ngrok 터널 생성
         http_tunnel = ngrok.connect(3000)
         tunnel_url = http_tunnel.public_url
-        print(f'서버가 시작되었습니다. 약 2분 동안 유지됩니다.')
+        print(f'서버가 시작되었습니다. 약 1분 동안 유지됩니다.')
         print(f'ngrok URL: {tunnel_url}')
         
-        # 2분 후 자동 종료를 위한 타이머 스크립트
-        time.sleep(120)  # 2분 동안 유지
+        # GitHub Actions에서 확인할 수 있도록 출력
+        try:
+            with open(os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null'), 'a') as f:
+                f.write(f'## 서버 접속 정보\\n')
+                f.write(f'서버 URL: {tunnel_url}\\n')
+        except Exception as e:
+            print(f'요약 작성 중 오류 발생: {e}')
         
-        # 종료 시 프로세스 정리
-        server_process.terminate()
-        ngrok.kill()
-        print('서버와 ngrok 터널이 종료되었습니다.')
-        " > server_log.txt 2>&1 &
-        
-        # ngrok URL을 가져와서 출력
-        sleep 10
-        echo "서버가 백그라운드에서 시작되었습니다. 약 15분 동안 유지됩니다."
-        grep "ngrok URL:" server_log.txt || echo "ngrok URL을 찾을 수 없습니다."
-        
-        # 성공 상태로 즉시 종료
-        exit 0
+        # 일정 시간 동안 실행 유지 (GitHub Actions에서는 무한 루프 대신 고정 시간)
+        try:
+            time.sleep(60)  # 1분 동안 유지
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # 종료 시 프로세스 정리
+            server_process.terminate()
+            ngrok.kill()
+            print('서버와 ngrok 터널이 종료되었습니다.')
+        "
