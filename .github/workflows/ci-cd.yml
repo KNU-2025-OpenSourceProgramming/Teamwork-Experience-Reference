@@ -54,6 +54,7 @@ jobs:
         python -c "
         import subprocess
         import time
+        import os
         from pyngrok import ngrok
         
         # ngrok 인증 설정
