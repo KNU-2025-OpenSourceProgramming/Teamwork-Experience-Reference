@@ -45,15 +45,46 @@ jobs:
       run: |
         cd server
         python -m pytest || true
-    
+
     - name: Start server and expose with ngrok
       env:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
       run: |
         pip install pyngrok
-        python -c "from pyngrok import ngrok; ngrok.set_auth_token('$NGROK_AUTH_TOKEN'); url = ngrok.connect(3000); print(f'Server available at: {url}')" &
-        cd server
-        python app.py &
-        sleep 15
-        echo "서버가 시작되었습니다. 약 15분 동안 유지됩니다."
-        echo "ngrok URL을 확인하세요."
+        python -c "
+        import subprocess
+        import time
+        from pyngrok import ngrok
+        
+        # ngrok 인증 설정
+        ngrok.set_auth_token('$NGROK_AUTH_TOKEN')
+        
+        # Flask 서버 시작
+        print('Flask 서버를 시작합니다...')
+        server_process = subprocess.Popen(['python', 'app.py'], cwd='server')
+        
+        # 서버 시작 대기
+        print('서버가 시작될 때까지 잠시 대기합니다...')
+        time.sleep(5)
+        
+        # ngrok 터널 생성
+        http_tunnel = ngrok.connect(3000)
+        tunnel_url = http_tunnel.public_url
+        print(f'서버가 시작되었습니다. 약 15분 동안 유지됩니다.')
+        print(f'ngrok URL: {tunnel_url}')
+        
+        # GitHub Actions에서 확인할 수 있도록 출력
+        with open(os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null'), 'a') as f:
+            f.write(f'## 서버 접속 정보\n')
+            f.write(f'서버 URL: {tunnel_url}\n')
+        
+        # 일정 시간 동안 실행 유지 (GitHub Actions에서는 무한 루프 대신 고정 시간)
+        try:
+            time.sleep(900)  # 15분 동안 유지
+        finally:
+            # 종료 시 프로세스 정리
+            server_process.terminate()
+            ngrok.kill()
+            print('서버와 ngrok 터널이 종료되었습니다.')
+        "
+          
