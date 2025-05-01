@@ -51,6 +51,9 @@ jobs:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
       run: |
         pip install pyngrok
+        
+        # 먼저 ngrok URL을 얻고 출력하는 스크립트 실행
+        echo "::group::서버 및 ngrok 설정"
         python -c "
         import subprocess
         import time
@@ -71,18 +74,52 @@ jobs:
         # ngrok 터널 생성
         http_tunnel = ngrok.connect(3000)
         tunnel_url = http_tunnel.public_url
+        
+        # 중요: URL을 특별 출력 형식으로 기록하여 쉽게 추출 가능하도록 함
+        print(f'NGROK_URL={tunnel_url}')
+        
+        # GitHub 환경 파일에 URL 저장
+        with open(os.environ.get('GITHUB_ENV', '/dev/null'), 'a') as f:
+            f.write(f'NGROK_URL={tunnel_url}\\n')
+        
+        # GitHub 출력에 URL 저장
+        with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+            f.write(f'ngrok_url={tunnel_url}\\n')
+        
         print(f'서버가 시작되었습니다. 약 1분 동안 유지됩니다.')
-        print(f'ngrok URL: {tunnel_url}')
         
+        # 일정 시간 동안 실행 유지
+        time.sleep(60)  # 1분 동안 유지
         
-        # 일정 시간 동안 실행 유지 (GitHub Actions에서는 무한 루프 대신 고정 시간)
-        try:
-            time.sleep(60)  # 1분 동안 유지
-        except KeyboardInterrupt:
-            pass
-        finally:
-            # 종료 시 프로세스 정리
-            server_process.terminate()
-            ngrok.kill()
-            print('서버와 ngrok 터널이 종료되었습니다.')
+        # 종료 시 프로세스 정리
+        server_process.terminate()
+        ngrok.kill()
+        print('서버와 ngrok 터널이 종료되었습니다.')
         "
+        echo "::endgroup::"
+      
+    - name: PR 코멘트에 ngrok URL 추가
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          // 로그에서 NGROK_URL= 라인 찾기
+          const fs = require('fs');
+          const output = require('child_process').execSync('grep NGROK_URL= $GITHUB_STEP_SUMMARY || echo "URL을 찾을 수 없습니다"').toString().trim();
+          const match = output.match(/NGROK_URL=(.+)/);
+          const url = match ? match[1] : process.env.NGROK_URL || '찾을 수 없음';
+          
+          const comment = `## 🔗 테스트 서버 URL
+          
+          테스트 서버가 약 1분 동안 다음 URL에서 접속 가능합니다:
+          
+          **${url}**
+          
+          > 참고: 이 URL은 일시적이며 약 1분 후에 자동으로 종료됩니다.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
