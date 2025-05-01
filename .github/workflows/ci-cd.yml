@@ -52,9 +52,8 @@ jobs:
       run: |
         pip install pyngrok
         
-        # 먼저 ngrok URL을 얻고 출력하는 스크립트 실행
-        echo "::group::서버 및 ngrok 설정"
-        python -c "
+        # 백그라운드에서 서버와 ngrok 실행
+        nohup python -c "
         import subprocess
         import time
         import os
@@ -74,52 +73,30 @@ jobs:
         # ngrok 터널 생성
         http_tunnel = ngrok.connect(3000)
         tunnel_url = http_tunnel.public_url
+        print(f'서버가 시작되었습니다. 약 2분 동안 유지됩니다.')
+        print(f'ngrok URL: {tunnel_url}')
+
+        # GitHub Actions에서 확인할 수 있도록 출력
+        try:
+          with open(os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null'), 'a') as f:
+              f.write(f'## 서버 접속 정보\\n')
+              f.write(f'서버 URL: {tunnel_url}\\n')
+          except Exception as e:
+              print(f'요약 작성 중 오류 발생: {e}')
         
-        # 중요: URL을 특별 출력 형식으로 기록하여 쉽게 추출 가능하도록 함
-        print(f'NGROK_URL={tunnel_url}')
-        
-        # GitHub 환경 파일에 URL 저장
-        with open(os.environ.get('GITHUB_ENV', '/dev/null'), 'a') as f:
-            f.write(f'NGROK_URL={tunnel_url}\\n')
-        
-        # GitHub 출력에 URL 저장
-        with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-            f.write(f'ngrok_url={tunnel_url}\\n')
-        
-        print(f'서버가 시작되었습니다. 약 1분 동안 유지됩니다.')
-        
-        # 일정 시간 동안 실행 유지
-        time.sleep(60)  # 1분 동안 유지
+        # 2분 후 자동 종료를 위한 타이머 스크립트
+        time.sleep(120)  # 2분 동안 유지
         
         # 종료 시 프로세스 정리
         server_process.terminate()
         ngrok.kill()
         print('서버와 ngrok 터널이 종료되었습니다.')
-        "
-        echo "::endgroup::"
-      
-    - name: PR 코멘트에 ngrok URL 추가
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          // 로그에서 NGROK_URL= 라인 찾기
-          const fs = require('fs');
-          const output = require('child_process').execSync('grep NGROK_URL= $GITHUB_STEP_SUMMARY || echo "URL을 찾을 수 없습니다"').toString().trim();
-          const match = output.match(/NGROK_URL=(.+)/);
-          const url = match ? match[1] : process.env.NGROK_URL || '찾을 수 없음';
-          
-          const comment = `## 🔗 테스트 서버 URL
-          
-          테스트 서버가 약 1분 동안 다음 URL에서 접속 가능합니다:
-          
-          **${url}**
-          
-          > 참고: 이 URL은 일시적이며 약 1분 후에 자동으로 종료됩니다.`;
-          
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: comment
-          });
+        " > server_log.txt 2>&1 &
+        
+        # ngrok URL을 가져와서 출력
+        sleep 10
+        echo "서버가 백그라운드에서 시작되었습니다. 약 2분 동안 유지됩니다."
+        grep "ngrok URL:" server_log.txt || echo "ngrok URL을 찾을 수 없습니다."
+        
+        # 성공 상태로 즉시 종료
+        exit 0
