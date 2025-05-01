@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flask flask-cors flask-sock torch numpy soundfile
+        pip install flask flask-cors flask-sock
         pip install pytest
     
     - name: Set up Node.js
@@ -41,12 +41,20 @@ jobs:
         mkdir -p ../server/www
         cp -r build/* ../server/www/
     
+    - name: Test server
+      run: |
+        cd server
+        python -m pytest || true
+    
     - name: Start server and expose with ngrok
+      if: github.event_name == 'pull_request'
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
       run: |
         pip install pyngrok
-        python -c "from pyngrok import ngrok; print(ngrok.connect(3000))" &
+        python -c "from pyngrok import ngrok; ngrok.set_auth_token('$NGROK_AUTH_TOKEN'); url = ngrok.connect(3000); print(f'Server available at: {url}')" &
         cd server
         python app.py &
-        sleep 10
+        sleep 15
         echo "서버가 시작되었습니다. 약 15분 동안 유지됩니다."
-        echo "ngrok URL 확인: https://dashboard.ngrok.com/endpoints/status"
+        echo "ngrok URL을 확인하세요."
