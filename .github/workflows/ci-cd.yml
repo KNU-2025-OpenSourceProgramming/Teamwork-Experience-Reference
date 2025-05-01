@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flask flask-cors flask-sock torch numpy soundfile
+        pip install flask flask-cors flask-sock
         pip install pytest
     
     - name: Set up Node.js
@@ -41,12 +41,64 @@ jobs:
         mkdir -p ../server/www
         cp -r build/* ../server/www/
     
-    - name: Start server and expose with ngrok
+    - name: Test server
       run: |
-        pip install pyngrok
-        python -c "from pyngrok import ngrok; print(ngrok.connect(3000))" &
         cd server
-        python app.py &
-        sleep 10
-        echo "서버가 시작되었습니다. 약 15분 동안 유지됩니다."
-        echo "ngrok URL 확인: https://dashboard.ngrok.com/endpoints/status"
+        python -m pytest || true
+
+    - name: Start server and expose with ngrok
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+      run: |
+        # ngrok 설치
+        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc > /dev/null
+        echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list > /dev/null
+        sudo apt update && sudo apt install -y ngrok
+        
+        # ngrok 인증 설정
+        ngrok config add-authtoken $NGROK_AUTH_TOKEN
+        
+        # 백그라운드에서 Flask 서버 시작
+        cd server && python app.py > server.log 2>&1 &
+        SERVER_PID=$!
+        echo "Flask 서버가 PID ${SERVER_PID}로 시작되었습니다."
+        
+        # 서버 시작 대기
+        echo "서버가 시작될 때까지 5초 대기합니다..."
+        sleep 5
+        
+        # 백그라운드에서 ngrok 시작
+        ngrok http 3000 --log=stdout > ngrok.log 2>&1 &
+        NGROK_PID=$!
+        echo "ngrok이 PID ${NGROK_PID}로 시작되었습니다."
+        
+        # ngrok URL 가져오기 (ngrok API를 사용)
+        sleep 5  # ngrok이 시작될 시간을 확보
+        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'http[^"]*')
+        
+        # URL 출력 및 저장
+        echo "::set-output name=ngrok_url::${NGROK_URL}"
+        echo "NGROK_URL=${NGROK_URL}" >> $GITHUB_ENV
+        echo "서버가 다음 URL에서 약 1분 동안 사용 가능합니다: ${NGROK_URL}"
+        
+        # PR 정보가 있는 경우 코멘트 추가
+        if [ "$GITHUB_EVENT_NAME" == "pull_request" ]; then
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          
+          # GitHub API를 사용하여 PR에 코멘트 추가
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/${PR_NUMBER}/comments" \
+            -d "{\"body\":\"## 🔗 테스트 서버 URL\n\n테스트 서버가 약 1분 동안 다음 URL에서 접속 가능합니다:\n\n**${NGROK_URL}**\n\n> 참고: 이 URL은 일시적이며 약 1분 후에 자동으로 종료됩니다.\"}"
+        fi
+        
+        # 1분 동안 서버 유지
+        echo "서버가 1분 동안 유지됩니다..."
+        sleep 60
+        
+        # 프로세스 종료
+        if [ -n "$SERVER_PID" ]; then kill $SERVER_PID || true; fi
+        if [ -n "$NGROK_PID" ]; then kill $NGROK_PID || true; fi
+        
+        echo "서버와 ngrok이 종료되었습니다."
