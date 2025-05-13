@@ -82,3 +82,51 @@
     box-shadow: 0 0 0 0 rgba(219, 68, 55, 0);
   }
 }
+
+/* 메인 컨테이너 스타일 */
+.App-main {
+  padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.connection-status {
+  margin-bottom: 20px;
+  padding: 10px;
+  background-color: #f5f5f5;
+  border-radius: 5px;
+}
+
+.connection-status input {
+  width: 100%;
+  padding: 8px;
+  margin-top: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.transcriptions {
+  margin-top: 30px;
+  border: 1px solid #eee;
+  border-radius: 5px;
+  padding: 15px;
+  background-color: #fafafa;
+}
+
+.transcriptions h2 {
+  margin-top: 0;
+  color: #333;
+}
+
+.transcriptions ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.transcriptions li {
+  padding: 10px;
+  margin-bottom: 8px;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
